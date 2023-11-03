@@ -24,98 +24,61 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import asyncio
+import pickle
 import sys
 import unittest
 from functools import partial
 
 import tritonclient.grpc as grpcclient
 from tritonclient.utils import *
-from vllm import SamplingParams
-from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.engine.async_llm_engine import AsyncLLMEngine
-from vllm.utils import random_uuid
 
 sys.path.append("../../common")
 from test_util import TestResultCollector, UserData, callback, create_vllm_request
 
 
-async def generate_python_vllm_output(prompt, llm_engine):
-    request_id = random_uuid()
-    sampling_parameters = {"temperature": 0, "top_p": 1}
-    sampling_params = SamplingParams(**sampling_parameters)
-
-    python_vllm_output = None
-    last_output = None
-
-    async for vllm_output in llm_engine.generate(prompt, sampling_params, request_id):
-        last_output = vllm_output
-
-    if last_output:
-        python_vllm_output = [
-            (prompt + output.text).encode("utf-8") for output in last_output.outputs
-        ]
-
-    return python_vllm_output
-
-
 class VLLMTritonAccuracyTest(TestResultCollector):
-    def setUp(self):
-        self.triton_client = grpcclient.InferenceServerClient(url="localhost:8001")
-        vllm_engine_config = {
-            "model": "facebook/opt-125m",
-            "gpu_memory_utilization": 0.3,
-        }
-
-        self.llm_engine = AsyncLLMEngine.from_engine_args(
-            AsyncEngineArgs(**vllm_engine_config)
-        )
-        self.vllm_model_name = "vllm_opt"
-
     def test_vllm_model(self):
-        user_data = UserData()
-        stream = False
-        prompts = [
-            "The most dangerous animal is",
-            "The capital of France is",
-            "The future of AI is",
-        ]
-        number_of_vllm_reqs = len(prompts)
-        sampling_parameters = {"temperature": "0", "top_p": "1"}
-        python_vllm_output = []
-        triton_vllm_output = []
+        with grpcclient.InferenceServerClient(url="localhost:8001") as triton_client:
+            model_name = "vllm_opt"
+            user_data = UserData()
+            stream = False
+            prompts = [
+                "The most dangerous animal is",
+                "The capital of France is",
+                "The future of AI is",
+            ]
+            number_of_vllm_reqs = len(prompts)
+            sampling_parameters = {"temperature": "0", "top_p": "1", "top_k": "-1"}
+            triton_vllm_output = []
 
-        self.triton_client.start_stream(callback=partial(callback, user_data))
-        for i in range(number_of_vllm_reqs):
-            request_data = create_vllm_request(
-                prompts[i], i, stream, sampling_parameters, self.vllm_model_name
-            )
-            self.triton_client.async_stream_infer(
-                model_name=self.vllm_model_name,
-                request_id=request_data["request_id"],
-                inputs=request_data["inputs"],
-                outputs=request_data["outputs"],
-                parameters=sampling_parameters,
-            )
+            triton_client.start_stream(callback=partial(callback, user_data))
+            for i in range(number_of_vllm_reqs):
+                request_data = create_vllm_request(
+                    prompts[i], i, stream, sampling_parameters, model_name
+                )
+                triton_client.async_stream_infer(
+                    model_name=model_name,
+                    request_id=request_data["request_id"],
+                    inputs=request_data["inputs"],
+                    outputs=request_data["outputs"],
+                    parameters=sampling_parameters,
+                )
 
-            python_vllm_output.extend(
-                asyncio.run(generate_python_vllm_output(prompts[i], self.llm_engine))
-            )
+            for i in range(number_of_vllm_reqs):
+                result = user_data._completed_requests.get()
+                self.assertIsNot(type(result), InferenceServerException)
 
-        for i in range(number_of_vllm_reqs):
-            result = user_data._completed_requests.get()
-            self.assertIsNot(type(result), InferenceServerException)
+                output = result.as_numpy("text_output")
+                self.assertIsNotNone(output)
 
-            output = result.as_numpy("text_output")
-            self.assertIsNotNone(output)
+                triton_vllm_output.extend(output)
 
-            triton_vllm_output.extend(output)
+            triton_client.stop_stream()
 
-        self.triton_client.stop_stream()
-        self.assertEqual(python_vllm_output, triton_vllm_output)
+            with open("python_vllm_output.pkl", "rb") as f:
+                python_vllm_output = pickle.load(f)
 
-    def tearDown(self):
-        self.triton_client.close()
+            self.assertEqual(python_vllm_output, triton_vllm_output)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ SERVER_ARGS="--model-repository=`pwd`/models --backend-directory=${BACKEND_DIR} 
 SERVER_LOG="./accuracy_test_server.log"
 CLIENT_LOG="./accuracy_test_client.log"
 TEST_RESULT_FILE='test_results.txt'
+PYTHON_VLLM_CLIENT="./vllm_client.py"
 CLIENT_PY="./accuracy_test.py"
 SAMPLE_MODELS_REPO="../../../samples/model_repository"
 EXPECTED_NUM_TESTS=1
@@ -44,6 +45,15 @@ sed -i 's/"gpu_memory_utilization": 0.5/"gpu_memory_utilization": 0.3/' models/v
 
 RET=0
 
+set +e
+python3 $PYTHON_VLLM_CLIENT
+if [ $? -ne 0 ]; then
+    echo -e "\n***\n*** Running $PYTHON_VLLM_CLIENT FAILED. \n***"
+    RET=1
+    exit 1
+fi
+set -e
+
 run_server
 if [ "$SERVER_PID" == "0" ]; then
     cat $SERVER_LOG
@@ -53,7 +63,6 @@ fi
 
 set +e
 python3 $CLIENT_PY -v > $CLIENT_LOG 2>&1
-
 if [ $? -ne 0 ]; then
     cat $CLIENT_LOG
     echo -e "\n***\n*** Running $CLIENT_PY FAILED. \n***"
@@ -70,7 +79,7 @@ set -e
 
 kill $SERVER_PID
 wait $SERVER_PID
-rm -rf models/
+rm -rf models/ *.pkl
 
 if [ $RET -eq 1 ]; then
     cat $CLIENT_LOG
