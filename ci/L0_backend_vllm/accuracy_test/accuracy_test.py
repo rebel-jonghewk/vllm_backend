@@ -66,10 +66,10 @@ class VLLMTritonAccuracyTest(TestResultCollector):
 
             for i in range(number_of_vllm_reqs):
                 result = user_data._completed_requests.get()
-                self.assertIsNot(type(result), InferenceServerException)
+                self.assertIsNot(type(result), InferenceServerException, str(result))
 
                 output = result.as_numpy("text_output")
-                self.assertIsNotNone(output)
+                self.assertIsNotNone(output, "`text_output` should not be None")
 
                 triton_vllm_output.extend(output)
 
@@ -77,8 +77,7 @@ class VLLMTritonAccuracyTest(TestResultCollector):
 
             with open("python_vllm_output.pkl", "rb") as f:
                 python_vllm_output = pickle.load(f)
-
-            self.assertEqual(python_vllm_output, triton_vllm_output)
+                self.assertEqual(python_vllm_output, triton_vllm_output)
 
 
 if __name__ == "__main__":

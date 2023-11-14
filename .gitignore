@@ -160,6 +160,7 @@ triton_python_backend_stub
 python_backend
 *results.txt
 *.log
+*.pkl
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
