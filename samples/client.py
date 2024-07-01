@@ -88,6 +88,7 @@ class LLMClient:
                 output = result.as_numpy("text_output")
                 for i in output:
                     self._results_dict[result.get_response().id].append(i)
+                    print(i.decode("utf-8"))
 
     async def run(self):
         sampling_parameters = {"temperature": "0.1", "top_p": "0.95"}

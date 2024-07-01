@@ -1,4 +1,1 @@
-Hello, my name is
-The most dangerous animal is
-The capital of France is
-The future of AI is
+Write me a poem about machine learning.
